@@ -38,7 +38,7 @@ services:
 
   lighthouse:
     network_mode: "host"
-    image: sigp/lighthouse:v5.2.0
+    image: sigp/lighthouse:v5.1.2
     pull_policy: always
     restart: unless-stopped
     volumes:

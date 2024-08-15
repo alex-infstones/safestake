@@ -1,13 +1,13 @@
 version: '3'
 services:
   geth:
-    image: ethereum/client-go:v1.13.14
+    image: ethereum/client-go:v1.14.7
     pull_policy: always
     restart: unless-stopped
     network_mode: "host"
     volumes:
-      - jwt-data:/data/FULLNODE/FULLNODE/jwt
-      - geth-data:/data/FULLNODE/FULLNODE/geth
+      - jwt-data:/data/jwt
+      - geth-data:/data/geth
     command: [
       "--${GETH_NETWORK}",
       "--syncmode=snap",
@@ -23,12 +23,12 @@ services:
       "--ws",
       "--ws.addr=0.0.0.0",
       "--ws.port=8546",
-      "--datadir=/data/FULLNODE/FULLNODE/geth",
+      "--datadir=/data/geth",
       "--pprof",
       "--pprof.addr=0.0.0.0",
       "--http.api=engine,eth,web3,net,debug",
       "--http.corsdomain=*",
-      "--authrpc.jwtsecret=/data/FULLNODE/FULLNODE/jwt/jwtsecret"
+      "--authrpc.jwtsecret=/data/jwt/jwtsecret"
     ]
     expose:
       - "8545"
@@ -36,21 +36,30 @@ services:
       - "8551"
       - "30303"
 
+  mev-boost:
+    image: flashbots/mev-boost:1.6.1a3
+    network_mode: "host"
+    pull_policy: always
+    restart: unless-stopped
+    command: -${GETH_NETWORK} -relay-check -relays ${MEV_BOOST_RELAYS}
+    expose:
+      - "18550"
   lighthouse:
     network_mode: "host"
-    image: sigp/lighthouse:v5.2.0
+    image: sigp/lighthouse:v5.2.1
     pull_policy: always
     restart: unless-stopped
     volumes:
-      - jwt-data:/data/FULLNODE/FULLNODE/jwt
-      - lighthouse-data:/data/FULLNODE/FULLNODE/lighthouse
+      - jwt-data:/data/jwt
+      - lighthouse-data:/data/lighthouse
     command:
       [
         "lighthouse",
         "bn",
+        "--builder=${MEV_ENDPOINT}",
         "--network=${LIGHTHOUSE_NETWORK}",
-        "--datadir=/data/FULLNODE/FULLNODE/lighthouse",
-        "--execution-jwt=/data/FULLNODE/FULLNODE/jwt/jwtsecret",
+        "--datadir=/data/lighthouse",
+        "--execution-jwt=/data/jwt/jwtsecret",
         "--http",
         "--listen-address=0.0.0.0",
         "--http-address=0.0.0.0",
@@ -81,7 +90,7 @@ services:
       - /bin/sh
       - -c
       - |
-        dvf validator_client --metrics --debug-level=info --network=${OPERATOR_NETWORK} --beacon-nodes=${BEACON_NODE_ENDPOINT} --api=${API_SERVER} --ws-url=${WS_URL}  --ip=${NODE_IP} --id=${OPERATOR_ID}  --registry-contract=${REGISTRY_CONTRACT_ADDRESS} --network-contract=${NETWORK_CONTRACT_ADDRESS} --base-port=26000 2>&1
+        dvf validator_client --builder-proposals --metrics --debug-level=info --network=${OPERATOR_NETWORK} --beacon-nodes=${BEACON_NODE_ENDPOINT} --api=${API_SERVER} --ws-url=${WS_URL}  --ip=${NODE_IP} --id=${OPERATOR_ID} --registry-contract=${REGISTRY_CONTRACT_ADDRESS} --network-contract=${NETWORK_CONTRACT_ADDRESS} --base-port=26000 2>&1
     expose:
       - "26000"
       - "26001"
@@ -90,14 +99,9 @@ services:
       - "26004"
       - "26005"
       - "5064"
-    deploy:
-      resources:
-        limits:
-          memory: 5G
 
   dvf_key_tool:
     network_mode: "host"
-    user: root
     volumes:
       - operator-data:/root/.lighthouse
     image: parastate/dvf-operator:${IMAGE_TAG}
@@ -106,11 +110,19 @@ services:
       - /bin/sh
       - -c
       - |
-        dvf_key_tool ${OPERATOR_NETWORK} > ~/.lighthouse/key.json
-    deploy:
-      resources:
-        limits:
-          memory: 5G
+        dvf_key_tool ${OPERATOR_NETWORK}
+
+  dvf_network_tool:
+    network_mode: "host"
+    image: parastate/dvf-operator:${IMAGE_TAG}
+    volumes:
+      - operator-data:/root/.lighthouse
+    pull_policy: always
+    command:
+      - /bin/sh
+      - -c
+      - |
+        dvf_network_tool ${OPERATOR_NETWORK} ${NODE_IP} 26000
 
   nethermind:
     image: nethermind/nethermind
@@ -118,8 +130,8 @@ services:
     restart: unless-stopped
     network_mode: "host"
     volumes:
-      - jwt-data:/data/FULLNODE/FULLNODE/jwt
-      - nethermind-data:/data/FULLNODE/FULLNODE/nethermind
+      - jwt-data:/data/jwt
+      - nethermind-data:/data/nethermind
     command: [
       "--config=${NETHERMIND_NETWORK}",
       "--JsonRpc.Enabled=true",
@@ -127,8 +139,8 @@ services:
       "--JsonRpc.EnginePort=8551",
       "--JsonRpc.WebSocketsPort=8546",
       "--JsonRpc.Host=0.0.0.0",
-      "--JsonRpc.JwtSecretFile=/data/FULLNODE/FULLNODE/jwt/jwtsecret",
-      "--datadir=/data/FULLNODE/FULLNODE/nethermind",
+      "--JsonRpc.JwtSecretFile=/data/jwt/jwtsecret",
+      "--datadir=/data/nethermind",
     ]
     expose:
       - "8551"
@@ -141,8 +153,8 @@ services:
     network_mode: "host"
     user: "0"
     volumes:
-      - jwt-data:/data/FULLNODE/FULLNODE/jwt
-      - besu-data:/data/FULLNODE/FULLNODE/besu
+      - jwt-data:/data/jwt
+      - besu-data:/data/besu
     command: [
       "--network=${BESU_NETWORK}",
       "--rpc-http-enabled=true",
@@ -152,9 +164,9 @@ services:
       "--rpc-ws-port=8546",
       "--host-allowlist=*",
       "--engine-host-allowlist=*",
-      "--engine-jwt-secret=/data/FULLNODE/FULLNODE/jwt/jwtsecret",
+      "--engine-jwt-secret=/data/jwt/jwtsecret",
       "--data-storage-format=BONSAI",
-      "--data-path=/data/FULLNODE/FULLNODE/besu",
+      "--data-path=/data/besu",
     ]
     expose:
       - "8551"
@@ -167,14 +179,14 @@ services:
     network_mode: "host"
     user: "0"
     volumes:
-      - jwt-data:/data/FULLNODE/FULLNODE/jwt
-      - erigon-data:/data/FULLNODE/FULLNODE/erigon
+      - jwt-data:/data/jwt
+      - erigon-data:/data/erigon
     command: [
       "--chain=${ERIGON_NETWORK}",
       "--authrpc.port=8551",
       "--ws",
-      "--authrpc.jwtsecret=/data/FULLNODE/FULLNODE/jwt/jwtsecret",
-      "--datadir=/data/FULLNODE/FULLNODE/erigon",
+      "--authrpc.jwtsecret=/data/jwt/jwtsecret",
+      "--datadir=/data/erigon",
       "--prune=htc",
       "--prune.r.before=4367322"
     ]
@@ -188,40 +200,40 @@ volumes:
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/geth
+      device: /data/geth
   lighthouse-data:
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/lighthouse
+      device: /data/lighthouse
   jwt-data:
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/jwt
+      device: /data/jwt
   operator-data:
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/operator
+      device: /data/operator
   nethermind-data:
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/nethermind
+      device: /data/nethermind
   besu-data:
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/besu
+      device: /data/besu
   erigon-data:
     driver: local
     driver_opts:
       o: bind
       type: none
-      device: /data/FULLNODE/FULLNODE/erigon
+      device: /data/erigon
